@@ -56,6 +56,23 @@ def run_async_task(async_func, *args):
     return result
 
 
+async def read_json_file(file_path: str) -> list:
+    """Читает данные из JSON-файла."""
+    if os.path.exists(file_path):
+        async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            try:
+                return json.loads(await f.read())
+            except json.JSONDecodeError:
+                return []
+    return []
+
+
+async def write_json_file(file_path: str, data: list) -> None:
+    """Записывает данные в JSON-файл."""
+    async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(data, ensure_ascii=False, indent=4))
+
+
 @app.task(bind=True, max_retries=3)
 def fetch_tender_links(self, page_number: int) -> List[str]:
     """Извлекает ссылки на тендеры с указанной страницы"""
@@ -115,36 +132,20 @@ def fetch_tender_data(self, reg_number: str) -> Optional[Dict]:
 
 async def load_processed_tenders() -> Set[str]:
     """Загружает список обработанных тендеров"""
-    if os.path.exists(PROCESSED_FILE):
-        async with aiofiles.open(PROCESSED_FILE, "r", encoding="utf-8") as f:
-            try:
-                data = await f.read()
-                return set(json.loads(data))
-            except json.JSONDecodeError:
-                return set()
-    return set()
+    processed_tenders = await read_json_file(PROCESSED_FILE)
+    return set(processed_tenders)
 
 
 async def save_processed_tenders(processed_tenders: Set[str]) -> None:
     """Сохраняет обработанные тендеры"""
-    async with aiofiles.open(PROCESSED_FILE, "w", encoding="utf-8") as f:
-        await f.write(json.dumps(list(processed_tenders), ensure_ascii=False, indent=4))
+    await write_json_file(PROCESSED_FILE, list(processed_tenders))
 
 
 async def save_to_json(tender: Dict) -> None:
     """Сохраняет тендер в JSON-файл"""
-    if os.path.exists(OUTPUT_FILE):
-        async with aiofiles.open(OUTPUT_FILE, "r+", encoding="utf-8") as file:
-            try:
-                tenders = json.loads(await file.read())
-            except json.JSONDecodeError:
-                tenders = []
-            tenders.append(tender)
-            await file.seek(0)
-            await file.write(json.dumps(tenders, ensure_ascii=False, indent=4))
-    else:
-        async with aiofiles.open(OUTPUT_FILE, "w", encoding="utf-8") as file:
-            await file.write(json.dumps([tender], ensure_ascii=False, indent=4))
+    tenders = await read_json_file(OUTPUT_FILE)
+    tenders.append(tender)
+    await write_json_file(OUTPUT_FILE, tenders)
 
 
 def main():
@@ -176,18 +177,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
